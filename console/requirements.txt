@@ -1,0 +1,4 @@
+Flask>=3.0
+requests>=2.31
+crowdstrike-falconpy>=1.4
+waitress>=3.0

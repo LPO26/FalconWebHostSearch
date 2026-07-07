@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Host Console</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="bar">
+    <span class="mark">hostconsole</span>
+    <span class="title">Asset Search</span>
+    <span class="sub">read-only &middot; Falcon + Tenable</span>
+    {% if demo %}<span class="demo">DEMO DATA</span>{% endif %}
+  </header>
+
+  <main class="wrap">
+    <form class="search" method="get" action="/">
+      <div class="row">
+        <select name="mode" class="mode">
+          <option value="auto" {{ 'selected' if mode == 'auto' }}>IP / Hostname / OS</option>
+          <option value="user" {{ 'selected' if mode == 'user' }}>Login user</option>
+          <option value="intel_actors" {{ 'selected' if mode == 'intel_actors' }}>Threat intel: actors</option>
+          <option value="intel_reports" {{ 'selected' if mode == 'intel_reports' }}>Threat intel: reports</option>
+        </select>
+        <input type="text" name="q" value="{{ q }}" autofocus
+               placeholder="Search hosts by IP / hostname / OS / login user &mdash; or intel by keyword (blank lists recent)">
+        <button class="btn" type="submit">Search</button>
+      </div>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" name="vulns" {{ 'checked' if vulns }}> Vulnerabilities (Tenable)</label>
+        <span class="sevgroup">
+          {% for name, cls in [('critical','critical'),('high','high'),('medium','medium'),('low','low'),('info','info')] %}
+          <label class="sevchip {{ cls }}"><input type="checkbox" name="sev" value="{{ name }}" {{ 'checked' if name in sev_selected }}>{{ name|capitalize }}</label>
+          {% endfor %}
+        </span>
+        <label class="opt"><input type="checkbox" name="ports" {{ 'checked' if ports }}> Open ports (Tenable)</label>
+        <label class="opt"><input type="checkbox" name="apps" {{ 'checked' if apps }}> Applications (Discover)</label>
+        <label class="opt"><input type="checkbox" name="detections" {{ 'checked' if detections }}> Detections (Falcon)</label>
+        <label class="opt days">Look back <input type="number" name="days" min="1" max="365" value="{{ days }}"> days</label>
+        <label class="opt"><input type="checkbox" name="nologin" {{ 'checked' if nologin }}> Skip login lookup</label>
+        <label class="opt"><input type="checkbox" name="aid" {{ 'checked' if aid }}> Show Agent ID</label>
+      </div>
+      <div class="hint">Extra data is only fetched when its box is checked; intel modes ignore the host options. Searching only &mdash; nothing here changes a host.</div>
+    </form>
+
+    {% if intel %}
+      {% if not intel.ok %}
+        <div class="msg error">{{ intel.error }}</div>
+      {% else %}
+        <div class="resulthead">
+          <h2>Threat intel: {{ intel.kind }}</h2>
+          <span class="count">{{ intel.total }} total</span>
+          <span class="desc">&mdash; {% if intel.query %}matching &ldquo;{{ intel.query }}&rdquo;{% else %}recent entries{% endif %}, showing {{ intel.rows|length }}</span>
+        </div>
+        {% if intel.rows|length == 0 %}
+          <div class="msg empty">Nothing found. Leave the search box empty to list recent entries, or try a different keyword.</div>
+        {% else %}
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  {% if intel.kind == 'actors' %}
+                    <th>Actor</th><th>Origins</th><th>Target industries</th><th>Last active</th>
+                  {% else %}
+                    <th>Report</th><th>Type</th><th>Published</th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in intel.rows %}
+                <tr>
+                  <td class="host">
+                    {% if intel.kind == 'reports' and i.id %}
+                      <a class="rlink" href="/report/{{ i.id }}">{{ i.name }}</a>
+                    {% else %}
+                      {{ i.name }}
+                    {% endif %}
+                  </td>
+                  <td class="muted">{{ i.detail or '-' }}</td>
+                  {% if intel.kind == 'actors' %}<td class="muted">{{ i.detail2 or '-' }}</td>{% endif %}
+                  <td class="muted">{{ i.when or '-' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+
+    {% if result %}
+      {% if not result.ok %}
+        <div class="msg error">{{ result.error }}</div>
+      {% elif result.hosts|length == 0 %}
+        {% if mode == 'user' %}
+          <div class="msg empty">No hosts found with a recent login by that user. Try a shorter fragment (e.g. a first name) &mdash; the value often includes a domain prefix.</div>
+        {% else %}
+          <div class="msg empty">No hosts matched. Try an IP, a hostname fragment, or an OS like &ldquo;Windows Server&rdquo;.</div>
+        {% endif %}
+      {% else %}
+        <div class="resulthead">
+          <h2>Hosts</h2>
+          <span class="count">{{ result.hosts|length }} match{{ '' if result.hosts|length == 1 else 'es' }}</span>
+          <span class="desc">&mdash; {{ result.description }}</span>
+        </div>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Hostname</th><th>Local IP</th><th>OS Version</th><th>Type</th>
+                <th>Manufacturer</th>
+                {% if result.show_login %}<th>Last Login User</th>{% endif %}
+                <th>Last Seen</th>
+                {% if result.show_aid %}<th>Agent ID</th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for h in result.hosts %}
+              <tr>
+                <td class="host">{{ h.hostname or '-' }}</td>
+                <td>{{ h.local_ip or '-' }}</td>
+                <td>{{ h.os_version or '-' }}</td>
+                <td>{{ h.product_type_desc or '-' }}</td>
+                <td class="muted">{{ h.system_manufacturer or '-' }}</td>
+                {% if result.show_login %}<td class="user">{{ h.last_login_user or '' }}</td>{% endif %}
+                <td class="muted">{{ (h.last_seen or '')[:10] }}</td>
+                {% if result.show_aid %}<td class="muted">{{ h.device_id or '' }}</td>{% endif %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if result.show_vulns %}
+          <div class="vsection">
+            <h2>Vulnerabilities <span class="pill">Tenable</span></h2>
+            <div class="vnote">Last {{ result.days }} days.{% if result.vuln_capped %} Showing the first {{ result.vulns|length }} hosts to limit load.{% endif %}</div>
+
+            {% if result.vuln_error %}
+              <div class="msg warn">{{ result.vuln_error }}</div>
+            {% endif %}
+
+            {% for h in result.hosts %}
+              {% set v = result.vulns.get(h.device_id) %}
+              {% if v is not none %}
+                <div class="vcard">
+                  <div class="vhead">
+                    <span class="name">{{ h.hostname or h.local_ip }}</span>
+                    <span class="ip">{{ h.local_ip }}</span>
+                    {% if v.found %}
+                      {% if v.tags %}
+                        <div class="tags">{% for t in v.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+                      {% endif %}
+                      {% if v.total %}
+                        <div class="tally">
+                          {% for name, cls in [('Critical','critical'),('High','high'),('Medium','medium'),('Low','low'),('Info','info')] %}
+                            {% if name in v.tally %}<span class="fg-{{ cls }}">{{ name }}: <b>{{ v.tally.get(name, 0) }}</b></span>{% endif %}
+                          {% endfor %}
+                          <span style="color:var(--muted)">Total: <b>{{ v.total }}</b></span>
+                          {% if v.hidden %}<span style="color:var(--muted)">({{ v.hidden }} other finding{{ '' if v.hidden == 1 else 's' }} hidden)</span>{% endif %}
+                        </div>
+                      {% endif %}
+                    {% endif %}
+                  </div>
+
+                  {% if not v.found %}
+                    <div class="notfound">Not found in Tenable (no matching asset by name or IP).</div>
+                  {% elif v.total == 0 %}
+                    <div class="notfound">No vulnerabilities{% if v.filter_label %} matching {{ v.filter_label }}{% endif %} in the last {{ result.days }} days{% if v.hidden %} ({{ v.hidden }} other finding{{ '' if v.hidden == 1 else 's' }} filtered out){% endif %}.</div>
+                  {% else %}
+                    <table>
+                      <thead><tr><th>Severity</th><th>Plugin</th><th>Vulnerability</th><th>Family</th></tr></thead>
+                      <tbody>
+                        {% for vuln in v.vulns %}
+                        <tr>
+                          <td><span class="sev {{ vuln.sev_class }}">{{ vuln.sev_label }}</span></td>
+                          <td class="muted">{{ vuln.plugin_id }}</td>
+                          <td>{{ vuln.plugin_name }}</td>
+                          <td class="muted">{{ vuln.plugin_family }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if result.show_ports and not result.vuln_error %}
+          <div class="vsection">
+            <h2>Open ports <span class="pill">Tenable</span></h2>
+            <div class="vnote">From the latest scan findings in the last {{ result.days }} days.</div>
+            {% for h in result.hosts %}
+              {% set p = result.ports.get(h.device_id) %}
+              {% if p is not none %}
+                <div class="vcard">
+                  <div class="vhead">
+                    <span class="name">{{ h.hostname or h.local_ip }}</span>
+                    <span class="ip">{{ h.local_ip }}</span>
+                  </div>
+                  {% if not p.found %}
+                    <div class="notfound">Not found in Tenable (no matching asset by name or IP).</div>
+                  {% elif p.ports|length == 0 %}
+                    <div class="notfound">No open ports detected in the window.</div>
+                  {% else %}
+                    <div class="portline">{% for x in p.ports %}<span class="port">{{ x }}</span>{% endfor %}</div>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if result.show_apps %}
+          <div class="vsection">
+            <h2>Installed applications <span class="pill">CrowdStrike Discover</span></h2>
+            {% if result.apps_error %}<div class="msg warn">{{ result.apps_error }}</div>{% endif %}
+            {% for h in result.hosts %}
+              {% set a = result.apps.get(h.device_id) %}
+              {% if a is not none %}
+                <div class="vcard">
+                  <div class="vhead">
+                    <span class="name">{{ h.hostname or h.local_ip }}</span>
+                    <span class="ip">{{ h.local_ip }}</span>
+                    {% if a.apps %}<span class="ip">{{ a.apps|length }} application{{ '' if a.apps|length == 1 else 's' }}</span>{% endif %}
+                  </div>
+                  {% if not a.apps %}
+                    <div class="notfound">No application data{% if a.note %} &mdash; {{ a.note }}{% endif %}.</div>
+                  {% else %}
+                    <table>
+                      <thead><tr><th>Application</th><th>Version</th><th>Vendor</th></tr></thead>
+                      <tbody>
+                        {% for app in a.apps %}
+                        <tr><td>{{ app.name }}</td><td class="muted">{{ app.version or '-' }}</td><td class="muted">{{ app.vendor or '-' }}</td></tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if result.show_detections %}
+          <div class="vsection">
+            <h2>Detections <span class="pill">Falcon Alerts</span></h2>
+            <div class="vnote">Last {{ result.days }} days, newest first.</div>
+            {% if result.detections_error %}<div class="msg warn">{{ result.detections_error }}</div>{% endif %}
+            {% for h in result.hosts %}
+              {% set d = result.detections.get(h.device_id) %}
+              {% if d is not none %}
+                <div class="vcard">
+                  <div class="vhead">
+                    <span class="name">{{ h.hostname or h.local_ip }}</span>
+                    <span class="ip">{{ h.local_ip }}</span>
+                    {% if d.note and d.rows %}<span class="ip">{{ d.note }}</span>{% endif %}
+                  </div>
+                  {% if d.rows|length == 0 %}
+                    <div class="notfound">{{ d.note or 'No detections in the window.' }}</div>
+                  {% else %}
+                    <table>
+                      <thead><tr><th>Severity</th><th>Date</th><th>Detection</th><th>Tactic / Technique</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {% for r in d.rows %}
+                        <tr>
+                          <td><span class="sev {{ r.sev_class }}">{{ r.sev_label }}</span></td>
+                          <td class="muted">{{ r.when }}</td>
+                          <td>{{ r.name }}</td>
+                          <td class="muted">{{ r.tactic_technique or '-' }}</td>
+                          <td class="muted">{{ r.status or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  </main>
+
+  <footer class="foot">Read-only search console &middot; runs on your host &middot; no actions are performed on any system.</footer>
+  <div id="searching" class="searching" hidden><span class="pulse"></span>Searching&hellip;</div>
+  <script>
+    (function () {
+      var form = document.querySelector("form.search");
+      var toast = document.getElementById("searching");
+      if (form && toast) {
+        form.addEventListener("submit", function () {
+          toast.hidden = false;
+          var btn = form.querySelector("button[type=submit]");
+          if (btn) { btn.disabled = true; btn.textContent = "Searching\u2026"; }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

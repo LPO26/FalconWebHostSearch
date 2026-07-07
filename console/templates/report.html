@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.name if report.ok else 'Intel report' }} &middot; Host Console</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="bar">
+    <span class="mark">hostconsole</span>
+    <span class="title">Intel Report</span>
+    <span class="sub">read-only &middot; Falcon Intelligence</span>
+    {% if demo %}<span class="demo">DEMO DATA</span>{% endif %}
+  </header>
+
+  <main class="wrap">
+    <div class="backlink"><a href="/?mode=intel_reports">&larr; Back to reports</a></div>
+
+    {% if not report.ok %}
+      <div class="msg error">{{ report.error }}</div>
+    {% else %}
+      <article class="report">
+        <h1>{{ report.name }}</h1>
+        <div class="rmeta">
+          {% if report.type %}<span class="pill">{{ report.type }}</span>{% endif %}
+          {% if report.when %}<span class="rdate">Published {{ report.when }}</span>{% endif %}
+          {% if not demo %}<a class="btn small" href="/report/{{ report.id }}/pdf">Download PDF</a>{% endif %}
+          {% if report.url %}<a class="rext" href="{{ report.url }}" target="_blank" rel="noopener noreferrer">Open in Falcon console &nearr;</a>{% endif %}
+        </div>
+
+        {% if report.actors or report.industries or report.countries or report.motivations %}
+        <div class="rfacts">
+          {% if report.actors %}<div><span class="k">Actors</span>{% for a in report.actors %}<span class="tag">{{ a }}</span>{% endfor %}</div>{% endif %}
+          {% if report.industries %}<div><span class="k">Target industries</span>{% for t in report.industries %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}
+          {% if report.countries %}<div><span class="k">Target countries</span>{% for t in report.countries %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}
+          {% if report.motivations %}<div><span class="k">Motivations</span>{% for t in report.motivations %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if report.body %}
+          <div class="rbody">{{ report.body }}</div>
+        {% else %}
+          <div class="msg empty">This report has no inline text. Use the PDF download for the full document.</div>
+        {% endif %}
+      </article>
+    {% endif %}
+  </main>
+
+  <footer class="foot">Read-only search console &middot; runs on your host &middot; no actions are performed on any system.</footer>
+</body>
+</html>
